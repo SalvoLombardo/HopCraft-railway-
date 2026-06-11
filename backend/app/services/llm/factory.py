@@ -9,7 +9,9 @@ If the provider doesn't work (for example rate limit)
 the factory will call the nex provider until there's no one to call
 
 """
+import json
 import logging
+import time
 
 from app.config import settings
 from app.services.llm.base import SuggestedItinerary
@@ -49,10 +51,11 @@ async def generate_with_fallback(
 """
     start = _FALLBACK_ORDER.index(settings.llm_provider)
 
-    for name in _FALLBACK_ORDER[start:]:
+    for fallback_position, name in enumerate(_FALLBACK_ORDER[start:]):
+        t0 = time.perf_counter()
         try:
             provider = _PROVIDERS[name]()
-            return await provider.generate_itineraries(
+            result = await provider.generate_itineraries(
                 origin=origin,
                 duration_days=duration_days,
                 budget_per_leg=budget_per_leg,
@@ -62,7 +65,19 @@ async def generate_with_fallback(
                 provider_hint=provider_hint,
             )
         except Exception as exc:
-            logger.warning("LLM provider '%s' failed: %s: %s", name, type(exc).__name__, exc)
+            logger.warning(
+                "LLM provider '%s' failed after %dms: %s: %s",
+                name, int((time.perf_counter() - t0) * 1000), type(exc).__name__, exc,
+            )
             continue
+
+        logger.info(json.dumps({
+            "event": "llm_call",
+            "provider": name,
+            "fallback_position": fallback_position,  # 0 = primary worked
+            "latency_ms": int((time.perf_counter() - t0) * 1000),
+            "itineraries": len(result),
+        }))
+        return result
 
     raise RuntimeError("None of the LLM providers are working.")

@@ -1,7 +1,7 @@
-import logging
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
@@ -9,12 +9,10 @@ from app.config import settings
 from app.db.database import engine, Base
 from app.db.redis import get_redis, close_redis
 from app.api.v1.router import api_router
+from app.utils.logging_config import correlation_id_var, setup_logging
 import app.models  # noqa: F401 — registra tutti i modelli con Base
 
-logging.basicConfig(
-    level=logging.DEBUG if settings.app_env == "development" else logging.INFO,
-    format="%(asctime)s %(levelname)-8s %(name)s — %(message)s",
-)
+setup_logging(settings.app_env)
 
 ###############---############
 # REMEMBER TO SWITCH TO Alembic migrations IN PROD
@@ -39,6 +37,20 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+@app.middleware("http")
+async def correlation_id_middleware(request: Request, call_next):
+    """Assigns a correlation ID to each request (honouring an incoming
+    X-Request-ID) and returns it in the response for client-side tracing."""
+    cid = request.headers.get("x-request-id") or uuid4().hex[:12]
+    token = correlation_id_var.set(cid)
+    try:
+        response = await call_next(request)
+    finally:
+        correlation_id_var.reset(token)
+    response.headers["X-Request-ID"] = cid
+    return response
+
 
 app.add_middleware(
     CORSMiddleware,
