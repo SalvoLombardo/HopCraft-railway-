@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     redis_url: str
 
     # Flight Provider
-    flight_provider: str = "amadeus"
+    flight_provider: str = "cascade"
     serpapi_api_key: str = ""
     amadeus_api_key: str = ""
     amadeus_api_secret: str = ""
@@ -26,10 +26,10 @@ class Settings(BaseSettings):
     app_env: str = "development"
     allowed_origins: str = "http://localhost:3000"
     cache_ttl_hours: int = 6
+    llm_cache_ttl_hours: int = 24
     max_airports_search: int = 300
 
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(env_file=".env")
 
 
 # Istanza globale usata in tutto il progetto
