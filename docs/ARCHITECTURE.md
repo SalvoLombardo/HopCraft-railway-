@@ -44,7 +44,7 @@
        │
        ├──► Flight Provider Layer (SerpAPI → Amadeus → Apify)
        ├──► LLM Provider Layer    (Gemini → Groq → Mistral)
-       ├──► PostgreSQL            (airports, flight_cache, search_history)
+       ├──► PostgreSQL            (airports, flight_cache)
        └──► Redis                 (quota counters, circuit breaker,
                                    LLM response cache, per-IP rate limits)
 ```
@@ -531,7 +531,7 @@ touched only:
 for a portfolio demo, and explicitly **not** presented as the production ceiling
 (see ADR-003). The original Terraform code was removed from this repository to avoid
 documenting infrastructure that no longer matches reality; it is preserved in a
-separate **private repository** together with the AWS deployment history, available
+separate **repository** together with the AWS deployment history, available
 on request.
 
 ### ADR-003 — Target production architecture (if cost were no constraint)

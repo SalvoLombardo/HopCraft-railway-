@@ -27,14 +27,3 @@ class FlightCache(Base):
         Index("idx_cache_lookup", "destination", "departure_date", "fetched_at"),
         Index("idx_cache_expiry", "fetched_at"),
     )
-
-
-class SearchHistory(Base):
-    __tablename__ = "search_history"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    # 'reverse' or 'smart_multi'
-    search_type: Mapped[str] = mapped_column(String(20), nullable=False)
-    params: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    results: Mapped[dict | None] = mapped_column(JSONB)
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())

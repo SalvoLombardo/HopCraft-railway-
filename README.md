@@ -47,7 +47,7 @@ Enter your home airport, trip duration (5–25 days), and budget per person. A 5
 | Layer | Technology | Notes |
 |---|---|---|
 | Backend | FastAPI (Python 3.12) | Async, ideal for parallel API calls |
-| Database | PostgreSQL 16 | Airports, flight cache (TTL 6 h), search history |
+| Database | PostgreSQL 16 | Airports, flight cache (TTL 6 h) |
 | Cache / Rate limiting | Redis 7 | LLM response cache, quota tracking, circuit breaker, per-IP limits |
 | Flight data (primary) | SerpAPI — Google Flights | 250 req/month free, covers Wizz Air, easyJet |
 | Flight data (fallback) | Amadeus Self-Service | 2 000 req/month free, major carriers only |
@@ -59,7 +59,7 @@ Enter your home airport, trip duration (5–25 days), and budget per person. A 5
 | Hosting | Railway | 4 services: backend, frontend, PostgreSQL, Redis |
 | CI | GitHub Actions | Lint (ruff) → test (pytest, 115 tests); Railway auto-deploys on push |
 
-> **Previously deployed on AWS** (EC2 + S3 + CloudFront, provisioned with Terraform). The migration to Railway was a deliberate cost decision when the AWS Free Tier expired — the full reasoning, the original architecture, and the target production design are documented as an architecture decision record in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#infrastructure-an-architecture-decision-record). The original Terraform IaC lives in a separate private repository (available on request).
+> **Previously deployed on AWS** (EC2 + S3 + CloudFront, provisioned with Terraform). The migration to Railway was a deliberate cost decision when the AWS Free Tier expired — the full reasoning, the original architecture, and the target production design are documented as an architecture decision record in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#infrastructure-an-architecture-decision-record). The original Terraform IaC lives in a separate  repository ( https://github.com/SalvoLombardo/HopCraft).
 
 ---
 
