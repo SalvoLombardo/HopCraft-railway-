@@ -15,6 +15,7 @@ from app.services.llm.base import (
     build_user_prompt,
     parse_itineraries,
 )
+from app.utils.http_retry import request_with_retry
 
 _API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
@@ -51,11 +52,18 @@ class GeminiProvider(LLMProvider):
             },
         }
 
+        # Retry only on 5xx: a 429 (rate limit) must fail immediately so the
+        # factory falls back to the next LLM provider instead of waiting.
         async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(
-                _API_URL,
-                params={"key": self._api_key},
-                json=payload,
+            resp = await request_with_retry(
+                lambda: client.post(
+                    _API_URL,
+                    params={"key": self._api_key},
+                    json=payload,
+                ),
+                attempts=2,
+                retry_statuses=(500, 502, 503, 504),
+                label="Gemini",
             )
             resp.raise_for_status()
 

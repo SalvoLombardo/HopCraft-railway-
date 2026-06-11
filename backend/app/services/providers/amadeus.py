@@ -127,7 +127,7 @@ class AmadeusProvider(FlightProvider):
         direct_only: bool = False,
         max_results: int = 50,
     ) -> list[FlightOffer]:
-        """Searches one-way flights with automatic retry on HTTP 429 (backoff 1s, 2s, 4s)."""
+        """Searches one-way flights with automatic retry on HTTP 429/5xx (backoff 1s, 2s, 4s)."""
         # Amadeus does not natively support date ranges:
         # date_from is used as the primary departure date
         params: dict = {
@@ -161,11 +161,12 @@ class AmadeusProvider(FlightProvider):
                     return []
                 continue
 
-            if resp.status_code == 429:
+            # Retry transient statuses: 429 (rate limit) and 5xx (server-side blips)
+            if resp.status_code == 429 or resp.status_code >= 500:
                 wait = 2 ** attempt  # 1s, 2s, 4s
                 logger.warning(
-                    "Amadeus %s→%s %s: HTTP 429 (attempt %d/3), retrying in %ds",
-                    origin, destination, date_from, attempt + 1, wait,
+                    "Amadeus %s→%s %s: HTTP %d (attempt %d/3), retrying in %ds",
+                    origin, destination, date_from, resp.status_code, attempt + 1, wait,
                 )
                 await asyncio.sleep(wait)
                 continue
@@ -187,7 +188,7 @@ class AmadeusProvider(FlightProvider):
             return [o for o in offers if o is not None]
 
         logger.warning(
-            "Amadeus %s→%s %s: HTTP 429 after 3 attempts, leg skipped",
+            "Amadeus %s→%s %s: still failing after 3 attempts, leg skipped",
             origin, destination, date_from,
         )
         return []

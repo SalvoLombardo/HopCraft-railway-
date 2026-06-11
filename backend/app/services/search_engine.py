@@ -15,7 +15,10 @@ Monthly rate limiting is managed via Redis: separate key per provider
 are centralised in providers/factory.py (PROVIDER_LIMITS, MONTHLY_WINDOW).
 """
 import asyncio
+import json
 import logging
+import time
+from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -70,6 +73,7 @@ async def reverse_search(
     Returns:
         (results list, all_from_cache, fetched_at, provider_status)
     """
+    t_start = time.perf_counter()
 
     # --- 1. Load all active airports (excluding the destination itself)
     stmt_airports = select(Airport).where(
@@ -127,6 +131,7 @@ async def reverse_search(
     active_provider = providers_in_order[0][0] if providers_in_order else "none"
 
     fresh_best: dict[str, FlightOffer] = {}
+    provider_usage: Counter[str] = Counter()
 
     async def _fetch(origin: str) -> None:
         for provider_name, provider in providers_in_order:
@@ -154,6 +159,7 @@ async def reverse_search(
                     if day_offers:
                         await save_to_cache(session, origin, destination, single_date, day_offers)
                 fresh_best[origin] = min(offers, key=lambda o: o.price_eur)
+                provider_usage[provider_name] += 1
                 return  # provider responded: skip remaining providers
 
             except Exception as exc:
@@ -164,7 +170,18 @@ async def reverse_search(
                 await record_failure(provider_name)
                 continue  # try the next provider
 
-    await asyncio.gather(*[_fetch(o) for o in missing_origins])
+    # return_exceptions=True: a failure for one origin (e.g. Redis hiccup in the
+    # rate limiter) must not abort the whole search — cached results and the
+    # other origins are still returned.
+    fetch_results = await asyncio.gather(
+        *[_fetch(o) for o in missing_origins], return_exceptions=True
+    )
+    for origin, res in zip(missing_origins, fetch_results):
+        if isinstance(res, Exception):
+            logger.warning(
+                "Fetch for origin %s failed entirely: %s: %s",
+                origin, type(res).__name__, res,
+            )
 
     # --- 6. Assembling the answer
     results: list[dict] = []
@@ -188,6 +205,17 @@ async def reverse_search(
 
     for r in results:
         r.pop("_fetched_at")
+
+    logger.info(json.dumps({
+        "event": "reverse_search",
+        "destination": destination,
+        "origins_considered": len(all_origins),
+        "origins_from_cache": len(cache_best),
+        "origins_fetched": len(fresh_best),
+        "provider_usage": dict(provider_usage),
+        "results_returned": len(results),
+        "total_ms": int((time.perf_counter() - t_start) * 1000),
+    }))
 
     # --- 7. Provider status
     quotas = await get_provider_quotas()

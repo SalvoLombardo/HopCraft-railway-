@@ -11,12 +11,16 @@ Endpoint documentation:
   https://serpapi.com/google-flights-api
 """
 import asyncio
+import logging
 from datetime import date, timedelta
 
 import httpx
 
 from app.config import settings
 from app.services.providers.base import FlightOffer, FlightProvider, Leg
+from app.utils.http_retry import request_with_retry
+
+logger = logging.getLogger(__name__)
 
 _SERPAPI_URL = "https://serpapi.com/search.json"
 
@@ -85,7 +89,10 @@ async def _fetch_for_date(
         params["stops"] = "0"   # 0=direct only, 1=max 1 stop, 2=any
 
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(_SERPAPI_URL, params=params)
+        resp = await request_with_retry(
+            lambda: client.get(_SERPAPI_URL, params=params),
+            label=f"SerpAPI {origin}→{destination} {search_date}",
+        )
         resp.raise_for_status()
         data = resp.json()
 
@@ -127,9 +134,14 @@ class GoogleFlightsProvider(FlightProvider):
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         offers: list[FlightOffer] = []
-        for r in results:
+        for d, r in zip(dates, results):
             if isinstance(r, list):
                 offers.extend(r)
+            else:
+                logger.warning(
+                    "SerpAPI %s→%s %s: date skipped — %s: %s",
+                    origin, destination, d, type(r).__name__, r,
+                )
 
         offers.sort(key=lambda o: o.price_eur)
         return offers[:max_results]
@@ -146,8 +158,13 @@ class GoogleFlightsProvider(FlightProvider):
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         offers: list[FlightOffer] = []
-        for r in results:
+        for leg, r in zip(legs, results):
             if isinstance(r, list) and r:
                 offers.append(min(r, key=lambda o: o.price_eur))
+            elif isinstance(r, Exception):
+                logger.warning(
+                    "SerpAPI multi-city %s→%s %s: leg failed — %s: %s",
+                    leg.origin, leg.destination, leg.date, type(r).__name__, r,
+                )
 
         return offers
