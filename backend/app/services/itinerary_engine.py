@@ -28,6 +28,7 @@ from app.services.providers.factory import (
     get_provider_quotas,
     get_providers_in_order,
 )
+from app.utils.llm_cache import get_cached_itineraries, save_itineraries
 from app.utils.rate_limiter import check_rate_limit
 
 logger = logging.getLogger(__name__)
@@ -194,15 +195,27 @@ async def run_smart_multi(
     available_airports = [f"{a.iata_code} ({a.city})" for a in airports_for_llm]
 
     t2 = time.perf_counter()
-    suggestions: list[SuggestedItinerary] = await generate_with_fallback(
-        origin=origin,
-        duration_days=trip_duration_days,
-        budget_per_leg=budget_per_leg,
-        season=season,
-        num_stops=explorable_area_details.num_stops,
-        available_airports=available_airports,
-        provider_hint=provider_hint,
+    cache_args = (
+        origin,
+        trip_duration_days,
+        budget_per_leg,
+        season,
+        explorable_area_details.num_stops,
+        provider_hint,
     )
+    suggestions = await get_cached_itineraries(*cache_args)
+    llm_cache_hit = suggestions is not None
+    if suggestions is None:
+        suggestions = await generate_with_fallback(
+            origin=origin,
+            duration_days=trip_duration_days,
+            budget_per_leg=budget_per_leg,
+            season=season,
+            num_stops=explorable_area_details.num_stops,
+            available_airports=available_airports,
+            provider_hint=provider_hint,
+        )
+        await save_itineraries(*cache_args, suggestions)
     t_llm_ms = int((time.perf_counter() - t2) * 1000)
 
     # ── Step 3: real price check (parallel, with concurrency limit)
@@ -244,6 +257,7 @@ async def run_smart_multi(
         "budget_eur": budget_per_person_eur,
         "travelers": travelers,
         "provider": active_provider,
+        "llm_cache_hit": llm_cache_hit,
         "step_area_ms": t_area_ms,
         "step_llm_ms": t_llm_ms,
         "step_pricing_ms": t_pricing_ms,
