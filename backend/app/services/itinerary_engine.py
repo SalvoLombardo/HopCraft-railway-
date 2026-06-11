@@ -28,6 +28,7 @@ from app.services.providers.factory import (
     get_provider_quotas,
     get_providers_in_order,
 )
+from app.utils.circuit_breaker import record_failure, record_success
 from app.utils.llm_cache import get_cached_itineraries, save_itineraries
 from app.utils.rate_limiter import check_rate_limit
 
@@ -135,12 +136,14 @@ async def _price_itinerary(
                 continue
             try:
                 offers = await provider.search_multi_city(legs)
+                await record_success(provider_name)
                 if offers:
                     break
             except Exception as exc:
                 logger.warning(
                     "Provider %s failed for itinerary %s: %s", provider_name, route, exc
                 )
+                await record_failure(provider_name)
                 continue
 
     if len(offers) < num_legs:
@@ -181,6 +184,15 @@ async def run_smart_multi(
     providers_in_order = await get_providers_in_order()
     provider_names = [name for name, _ in providers_in_order]
     active_provider = provider_names[0] if provider_names else "none"
+
+    # Fail fast if no flight provider is usable: pricing (step 3) would be
+    # impossible, so don't burn an LLM call on step 2.
+    if not providers_in_order:
+        raise RuntimeError(
+            "Nessun provider di voli è al momento disponibile "
+            "(quote mensili esaurite o provider temporaneamente non raggiungibili). "
+            "Riprova più tardi."
+        )
 
     # provider_hint guides the AI only when Amadeus is the sole available provider
     only_amadeus = provider_names == ["amadeus"]

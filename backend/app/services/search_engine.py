@@ -34,6 +34,7 @@ from app.services.providers.factory import (
     get_provider_quotas,
     get_providers_in_order,
 )
+from app.utils.circuit_breaker import record_failure, record_success
 from app.utils.geo import haversine_km
 from app.utils.rate_limiter import check_rate_limit
 
@@ -140,6 +141,7 @@ async def reverse_search(
                     origin, destination, date_from, date_to,
                     direct_only=direct_only, max_results=10,
                 )
+                await record_success(provider_name)
                 if not offers:
                     continue
 
@@ -159,6 +161,7 @@ async def reverse_search(
                     "Provider %s %s→%s failed: %s: %s",
                     provider_name, origin, destination, type(exc).__name__, exc,
                 )
+                await record_failure(provider_name)
                 continue  # try the next provider
 
     await asyncio.gather(*[_fetch(o) for o in missing_origins])

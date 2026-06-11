@@ -374,12 +374,29 @@ class TestRunSmartMulti:
         with patch("app.services.itinerary_engine.calculate_area",
                    new=AsyncMock(return_value=_make_area_result())), \
              patch("app.services.itinerary_engine.get_providers_in_order",
-                   new=AsyncMock(return_value=[])), \
+                   new=AsyncMock(return_value=[("serpapi", AsyncMock())])), \
              patch("app.services.itinerary_engine.generate_with_fallback",
                    new=AsyncMock(side_effect=RuntimeError("Tutti i provider LLM hanno fallito."))):
 
             with pytest.raises(RuntimeError, match="provider LLM"):
                 await run_smart_multi(session=session, **SMART_PARAMS)
+
+    async def test_no_flight_providers_fails_fast_before_llm(self):
+        """Se nessun flight provider è disponibile, la pipeline si ferma
+        prima di chiamare l'LLM (risparmia quota) con un messaggio chiaro."""
+        session = AsyncMock()
+        llm_mock = AsyncMock()
+
+        with patch("app.services.itinerary_engine.calculate_area",
+                   new=AsyncMock(return_value=_make_area_result())), \
+             patch("app.services.itinerary_engine.get_providers_in_order",
+                   new=AsyncMock(return_value=[])), \
+             patch("app.services.itinerary_engine.generate_with_fallback", new=llm_mock):
+
+            with pytest.raises(RuntimeError, match="provider di voli"):
+                await run_smart_multi(session=session, **SMART_PARAMS)
+
+        llm_mock.assert_not_awaited()
 
     async def test_mixed_no_data_and_over_budget_raises(self):
         """Mix di rotte senza copertura e sopra budget → messaggio combinato."""

@@ -18,6 +18,7 @@ from app.services.providers.base import FlightProvider
 from app.services.providers.google_flights import GoogleFlightsProvider
 from app.services.providers.amadeus import AmadeusProvider
 from app.services.providers.apify import ApifyProvider
+from app.utils.circuit_breaker import is_open
 from app.utils.rate_limiter import get_remaining
 
 # Monthly window in seconds (also used by search_engine and itinerary_engine)
@@ -80,6 +81,9 @@ async def get_providers_in_order() -> list[tuple[str, FlightProvider]]:
         FLIGHT_PROVIDER=cascade   → order [serpapi, amadeus, apify]  (automatic)
 
     Returns an empty list if all providers are exhausted.
+
+    Providers whose circuit breaker is open (repeated recent failures, e.g. an
+    outage) are skipped for the cooldown period even if they have quota left.
     """
     ordered = _all_providers()
 
@@ -93,7 +97,7 @@ async def get_providers_in_order() -> list[tuple[str, FlightProvider]]:
     result = []
     for name, provider in ordered:
         remaining = await get_remaining(f"{name}:monthly", PROVIDER_LIMITS[name])
-        if remaining > 0:
+        if remaining > 0 and not await is_open(name):
             result.append((name, provider))
     return result
 

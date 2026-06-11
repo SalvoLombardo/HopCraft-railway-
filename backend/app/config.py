@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     llm_cache_ttl_hours: int = 24
     max_airports_search: int = 300
 
+    # Per-IP hourly rate limits on the public search endpoints.
+    # Smart Multi-City is far more expensive (LLM call + many provider calls),
+    # so its limit is stricter.
+    rate_limit_reverse_hourly: int = 30
+    rate_limit_smart_hourly: int = 10
+
     model_config = SettingsConfigDict(env_file=".env")
 
 

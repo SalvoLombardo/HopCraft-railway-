@@ -9,6 +9,7 @@ from app.db.database import get_session
 from app.models.schemas import FlightOfferOut, ReverseSearchOut, SmartMultiIn, SmartMultiOut
 from app.services.search_engine import reverse_search
 from app.services.itinerary_engine import run_smart_multi
+from app.utils.user_rate_limit import limit_reverse_search, limit_smart_multi
 
 router = APIRouter()
 
@@ -28,7 +29,7 @@ GET /api/v1/search/reverse
   &origin_lon=4.9
   &radius_km=600
 """
-@router.get("/reverse", response_model=ReverseSearchOut)
+@router.get("/reverse", response_model=ReverseSearchOut, dependencies=[Depends(limit_reverse_search)])
 async def search_reverse(
     session: SessionDep,
     destination: Annotated[
@@ -75,6 +76,17 @@ async def search_reverse(
     )
 
     if not results:
+        # Distinguish "no flights found" from "no provider available at all":
+        # the second case is a temporary service condition, not a 404.
+        if provider_status.active_provider == "none":
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Nessun provider di voli è al momento disponibile "
+                    "(quote mensili esaurite o provider temporaneamente non raggiungibili). "
+                    "Riprova più tardi."
+                ),
+            )
         raise HTTPException(status_code=404, detail=f"No flight find to {destination}")
 
     offers = [
@@ -101,7 +113,7 @@ async def search_reverse(
     )
 
 
-@router.post("/smart-multi", response_model=SmartMultiOut)
+@router.post("/smart-multi", response_model=SmartMultiOut, dependencies=[Depends(limit_smart_multi)])
 async def search_smart_multi(
     session: SessionDep,
     body: SmartMultiIn,
