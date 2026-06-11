@@ -1,8 +1,9 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.config import settings
 from app.db.database import engine, Base
@@ -52,5 +53,28 @@ app.include_router(api_router)
 
 
 @app.get("/api/v1/health")
-async def health():
-    return {"status": "ok", "env": settings.app_env}
+async def health(response: Response):
+    db_ok = True
+    redis_ok = True
+
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+    except Exception:
+        db_ok = False
+
+    try:
+        redis = await get_redis()
+        await redis.ping()
+    except Exception:
+        redis_ok = False
+
+    if not (db_ok and redis_ok):
+        response.status_code = 503
+
+    return {
+        "status": "ok" if (db_ok and redis_ok) else "degraded",
+        "env": settings.app_env,
+        "db": "ok" if db_ok else "error",
+        "redis": "ok" if redis_ok else "error",
+    }
